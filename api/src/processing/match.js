@@ -83,6 +83,7 @@ export default async function({ host, patternMatch, params, authType }) {
                     index: patternMatch.index - 1,
                     toGif: !!params.convertGif,
                     alwaysProxy: params.alwaysProxy,
+                    quality: params.videoQuality,
                     dispatcher,
                     subtitleLang
                 });

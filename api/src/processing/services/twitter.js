@@ -36,10 +36,31 @@ function needsFixing(media) {
     return mediaTimestamp > badContainerStart && mediaTimestamp < badContainerEnd
 }
 
-function bestQuality(arr) {
+function variantHeight(v) {
+    // twimg variant URLs carry the resolution, e.g. .../avc1/1280x720/x.mp4
+    const m = /\/(\d+)x(\d+)\//.exec(v.url);
+    return m ? Math.min(Number(m[1]), Number(m[2])) : 0;
+}
+
+function bestQuality(arr, quality) {
+    const mp4s = arr.filter(v => v.content_type === "video/mp4");
+    let pool = mp4s;
+
+    // respect the requested video quality: prefer the best variant that
+    // doesn't exceed it; if every variant exceeds it, take the smallest
+    const cap = Number(quality);
+    if (cap && mp4s.some(variantHeight)) {
+        const within = mp4s.filter(v => {
+            const h = variantHeight(v);
+            return h && h <= cap;
+        });
+        pool = within.length ? within : [
+            mp4s.reduce((a, b) => Number(a?.bitrate) < Number(b?.bitrate) ? a : b)
+        ];
+    }
+
     return stripVideoURL(
-        arr.filter(v => v.content_type === "video/mp4")
-        .reduce((a, b) => Number(a?.bitrate) > Number(b?.bitrate) ? a : b)
+        pool.reduce((a, b) => Number(a?.bitrate) > Number(b?.bitrate) ? a : b)
         .url
     );
 }
@@ -207,7 +228,7 @@ const extractGraphqlMedia = async (thread, dispatcher, id, guestToken, cookie) =
     return (repostedTweet?.media || baseTweet?.extended_entities?.media);
 }
 
-export default async function({ id, index, toGif, dispatcher, alwaysProxy, subtitleLang }) {
+export default async function({ id, index, toGif, dispatcher, alwaysProxy, subtitleLang, quality }) {
     const cookie = await getCookie('twitter');
 
     let guestToken = await getGuestToken(dispatcher);
@@ -316,7 +337,7 @@ export default async function({ id, index, toGif, dispatcher, alwaysProxy, subti
 
             return {
                 type: subtitles || needsFixing(mediaItem) ? "remux" : "proxy",
-                urls: bestQuality(mediaItem.video_info.variants),
+                urls: bestQuality(mediaItem.video_info.variants, quality),
                 filename: `twitter_${id}.mp4`,
                 audioFilename: `twitter_${id}_audio`,
                 isGif: mediaItem.type === "animated_gif",
@@ -341,7 +362,7 @@ export default async function({ id, index, toGif, dispatcher, alwaysProxy, subti
                     }
                 }
 
-                let url = bestQuality(content.video_info.variants);
+                let url = bestQuality(content.video_info.variants, quality);
                 const shouldRenderGif = content.type === "animated_gif" && toGif;
                 const videoFilename = `twitter_${id}_${i + 1}.${shouldRenderGif ? "gif" : "mp4"}`;
 
